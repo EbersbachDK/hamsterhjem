@@ -218,6 +218,20 @@ canvas#scene{touch-action:none}
   .shop{grid-template-columns:repeat(4,minmax(0,1fr))}
   .log{max-height:none}
 }
+/* dagens opgave */
+.task{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent)}
+.task .ico{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#2a1700;display:grid;place-items:center;font-weight:800;flex:none}
+.task b{display:block;font-size:14.5px;line-height:1.25}
+.task small{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.task.done{background:var(--leaf-soft);border-color:var(--leaf)}
+.task.done .ico{background:var(--leaf);color:#fff}
+/* personlighed ved adoption */
+.natures{display:flex;flex-wrap:wrap;gap:8px}
+.natures button{border:1.5px solid var(--line);background:var(--surface-2);border-radius:999px;padding:7px 14px;font-weight:600;font-size:14px}
+.natures button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.natures button:disabled{opacity:.4;cursor:not-allowed}
+.nature-desc{margin:8px 0 0;font-size:13px;color:var(--muted);min-height:2.6em}
+@media (pointer:coarse){ .natures button{min-height:42px;padding:8px 16px;font-size:15px} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -279,8 +293,13 @@ canvas#scene{touch-action:none}
 <div class="modal" id="adopt" hidden>
   <div class="sheet">
     <h2>Vælg din hamster</h2>
-    <p>Hver hamster har sin egen personlighed. Du kender ét træk fra starten. Resten opdager du, når den begynder at stole på dig.</p>
+    <p>Hver hamster har sin egen personlighed med to træk. Vælg dem selv, eller lad det være en overraskelse. Et træk du ikke har valgt, opdager du, når hamsteren begynder at stole på dig.</p>
     <div class="breeds" id="breeds"></div>
+    <div>
+      <h3 style="font-family:var(--f-display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:600">Personlighed <span id="natureCount" style="text-transform:none;letter-spacing:0;font-family:var(--f-body)"></span></h3>
+      <div class="natures" id="natures"></div>
+      <p class="nature-desc" id="natureDesc"></p>
+    </div>
     <div>
       <h3 style="font-family:var(--f-display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:600">Navn</h3>
       <div class="namerow">
@@ -297,7 +316,7 @@ canvas#scene{touch-action:none}
 
 <script>
 (() => {
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.2.0';
 // ældre iPads (iOS < 16) mangler roundRect
 if(!CanvasRenderingContext2D.prototype.roundRect){
   CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){ r=Math.min(+r||0,w/2,h/2); this.moveTo(x+r,y); this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r); this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); this.closePath(); };
@@ -349,6 +368,16 @@ const ACHS = [
   {id:'voksen',name:'Fuldvoksen hamster',reward:60},
   {id:'tillid90',name:'Bedste venner (tillid 90)',reward:80}
 ];
+const TASKS = [
+  {id:'pet',n:3,text:'Kæl for {navn} 3 gange',reward:25},
+  {id:'treat',n:2,text:'Giv {navn} 2 godbidder',reward:20},
+  {id:'spot',n:1,text:'Pletrens buret',reward:15},
+  {id:'food',n:1,text:'Fyld foderskålen',reward:15},
+  {id:'water',n:1,text:'Fyld vandflasken',reward:15},
+  {id:'move',n:1,text:'Flyt en ting i buret (Byg bur)',reward:15},
+  {id:'buy',n:1,text:'Køb noget nyt: en ting til buret eller godbidder',reward:20},
+  {id:'fun',n:1,text:'Få glæden op på mindst 80',reward:25}
+];
 const NAMES = ['Mochi','Pjuske','Peanut','Kanel','Bønne','Fnug','Toffee','Pjevs','Nugget','Hasselnød','Muffin','Gulerod','Bobo','Pingo'];
 const H = 460, TRAY = 26;
 
@@ -361,12 +390,11 @@ const rnd = (a,b)=>a+Math.random()*(b-a);
 const pick = a=>a[Math.floor(Math.random()*a.length)];
 const clamp = (v,a=0,b=100)=>Math.max(a,Math.min(b,v));
 
-function newState(name, breed){
+function newState(name, breed, picks=[]){
   const b = BREEDS[breed];
   const pool = Object.keys(TRAITS);
-  const traits = [];
-  const first = Math.random()<.6 && b.bias ? pick(b.bias) : pick(pool);
-  traits.push(first);
+  const traits = picks.slice(0,2);
+  if(!traits.length) traits.push(Math.random()<.6 && b.bias ? pick(b.bias) : pick(pool));
   while(traits.length<2){
     const t = pick(pool);
     if(traits.includes(t)) continue;
@@ -374,7 +402,7 @@ function newState(name, breed){
     traits.push(t);
   }
   const s = {
-    v:2, name, breed, traits, revealed:1, time:18*60, born:0,
+    v:2, name, breed, traits, revealed:Math.max(1,Math.min(2,picks.length)), time:18*60, born:0,
     st:{hunger:80,thirst:85,energy:70,fun:65,clean:100,health:95,trust:traits.includes('genert')?4:12},
     cage:{size:'lille',bedding:10,bowl:100,water:100,items:[
       {id:1,type:'skaal',x:480},{id:2,type:'flaske',x:600},{id:3,type:'hus',x:150}
@@ -488,6 +516,7 @@ function step(dm){
 
   // trait reveal & achievements
   if(S.revealed<2 && s.trust>=30){ S.revealed=2; const t=TRAITS[S.traits[1]].name; log(`Du har lært ${S.name} bedre at kende: ${S.name} er også ${t.toLowerCase()}.`); toast(`Nyt personlighedstræk opdaget: ${t}`); renderCare(true); }
+  if(s.fun>=80) taskEvent('fun');
   achCheck();
 }
 
@@ -500,6 +529,7 @@ function hourly(hh){
     const bonus = Math.round(avg/5);
     const pay = 20 + bonus;
     S.money += pay; S.treatsToday = 0; S.day={sum:0,n:0};
+    newTask(); log(`Dagens opgave: ${taskText(taskDef())} (+${taskDef().reward} kr.).`);
     log(`Ny dag. Du får ${pay} kr. i lommepenge (${bonus} kr. i bonus for god pasning).`);
     toast(`+${pay} kr. lommepenge`);
   }
@@ -517,6 +547,26 @@ function achCheck(){
   if(checks().every(c=>c.ok)) g('velfaerd');
   if(dayNo()>=8) g('uge');
   if(ageDays()>=14) g('voksen');
+}
+
+// ---------- dagens opgave ----------
+function newTask(){
+  const last = S.task && S.task.id;
+  const t = pick(TASKS.filter(x=>x.id!==last));
+  S.task = {id:t.id, n:0, done:false};
+}
+function taskDef(){ return S.task && TASKS.find(x=>x.id===S.task.id); }
+function taskText(d){ return d.text.replace('{navn}', S.name); }
+function taskEvent(id){
+  const d = taskDef();
+  if(!d || S.task.done || S.task.id!==id) return;
+  S.task.n++;
+  if(S.task.n>=d.n){
+    S.task.done=true; S.money+=d.reward;
+    log(`Dagens opgave klaret: ${taskText(d).toLowerCase()}. +${d.reward} kr.`);
+    toast(`Dagens opgave klaret! +${d.reward} kr.`);
+  }
+  if(tab==='care') renderCare();
 }
 
 // ---------- AI ----------
@@ -619,7 +669,7 @@ function pet(){
     s.trust=clamp(s.trust-1); say('Nap!'); toast(`Av! ${S.name} nappede dig. Giv ${S.name} lidt mere tid.`); log(`${S.name} nappede dig. Genert og ikke klar endnu.`); return;
   }
   if(S.time - S.lastPet < 10){ say('Nu er det nok kæl.'); return; }
-  S.lastPet=S.time;
+  S.lastPet=S.time; taskEvent('pet');
   s.trust = clamp(s.trust + (has('genert')?1.2:2.4)); s.fun = clamp(s.fun+4);
   for(let i=0;i<4;i++) R.parts.push({x:R.x+rnd(-20,20),y:R.y-50*hk(),vx:rnd(-15,15),vy:rnd(-50,-30),life:1.4,kind:'heart'});
   say(s.trust>60?pick(['Mere kløen bag øret!','Du er min yndlingsmenneske.','Det her er rart.']):s.trust>30?pick(['Okay, det er rart.','Du lugter fint.']):pick(['…','Hvem er du?','Forsigtigt!']));
@@ -629,7 +679,7 @@ function giveTreat(key){
   if(S.treats[key]<=0) return;
   if(S.sick){ toast(`${S.name} vil hellere hvile nu.`); return; }
   wakeIfNeeded('treat');
-  S.treats[key]--; S.treatsToday++;
+  S.treats[key]--; S.treatsToday++; if(S.treatsToday<=4) taskEvent('treat');
   const s=S.st, mg=has('madglad')?1.5:1;
   s.fun=clamp(s.fun+T.fun*mg); s.trust=clamp(s.trust+T.trust*mg*(has('genert')?.6:1)); s.hunger=clamp(s.hunger+T.hunger); s.thirst=clamp(s.thirst+T.thirst);
   for(let i=0;i<5;i++) R.parts.push({x:R.x+R.face*30*hk(),y:R.y-30,vx:rnd(-20,20),vy:rnd(-60,-20),life:1,kind:'seed'});
@@ -637,7 +687,7 @@ function giveTreat(key){
   else { say(has('madglad')?'JA! Mere af det!':pick(['Mums!','Den gemmer jeg i kinden.','Tak!'])); }
   renderTreats();
 }
-function buyTreat(key){ const T=TREATS[key]; if(spend(T.price)){ S.treats[key]+=T.buy; renderTreats(); } }
+function buyTreat(key){ const T=TREATS[key]; if(spend(T.price)){ S.treats[key]+=T.buy; taskEvent('buy'); renderTreats(); } }
 
 // ---------- drawing ----------
 const cv=document.getElementById('scene'), ctx=cv.getContext('2d');
@@ -944,10 +994,10 @@ cv.addEventListener('pointermove',e=>{
   if(!R.drag) return;
   const p=toLogical(e), it=S.cage.items.find(i=>i.id===R.drag.id); if(!it) return;
   const d=ITEMS[it.type];
-  it.x=clamp(p.x-R.drag.off, d.w/2+18, W()-d.w/2-18);
+  const nx=clamp(p.x-R.drag.off, d.w/2+18, W()-d.w/2-18); if(Math.abs(nx-it.x)>.5) R.drag.moved=true; it.x=nx;
   if(R.next && Math.abs(R.next.x-it.x)<200 && R.act!=='walk' && R.act!=='idle'){ /* keep */ }
 });
-function endDrag(){ if(R.drag){ R.drag=null; R.act='idle'; save(); } }
+function endDrag(){ if(R.drag){ if(R.drag.moved) taskEvent('move'); R.drag=null; R.act='idle'; save(); } }
 cv.addEventListener('pointerup',endDrag);
 cv.addEventListener('pointercancel',endDrag);
 cv.addEventListener('contextmenu',e=>e.preventDefault());
@@ -969,6 +1019,7 @@ function renderCare(force){
         <div style="min-width:0"><h2>${esc(S.name)}</h2><p>${br.name} · voksen længde ${br.len}</p><span class="mood" id="mood"></span></div></div>
       <div><h3>Personlighed</h3><div class="traits">${tr}</div><p class="trait-desc">${desc}</p></div>
       <div><h3>Behov</h3><div class="stats" id="stats"></div></div>
+      <div><h3>Dagens opgave</h3><div class="task" id="task"></div></div>
       <div class="facts" id="facts"></div>
       <div><h3>Burets velfærd</h3><ul class="checks" id="checks"></ul></div>`;
     const pc=$('portrait').getContext('2d'); pc.scale(2,2);
@@ -981,6 +1032,9 @@ function renderCare(force){
   const me=$('mood'); me.textContent=`${mw} · ${doing()}`; me.className='mood '+mc;
   const weeks = 4 + Math.floor(ageDays()/7);
   $('facts').innerHTML=`<div class="fact"><span>Alder</span><b>${weeks} uger</b></div><div class="fact"><span>Sammen</span><b>${dayNo()} ${dayNo()===1?'dag':'dage'}</b></div><div class="fact"><span>Godbidder</span><b>${S.treatsToday}/4 i dag</b></div>`;
+  const td=taskDef();
+  if(td){ const el=$('task'); el.className='task'+(S.task.done?' done':'');
+    el.innerHTML=`<span class="ico">${S.task.done?'✓':'!'}</span><div><b>${esc(taskText(td))}</b><small>${S.task.done?`Klaret – +${td.reward} kr. Ny opgave i morgen kl. 08:00`:`${td.n>1?`${S.task.n}/${td.n} · `:''}Belønning ${td.reward} kr.`}</small></div>`; }
   $('checks').innerHTML=checks().map(c=>`<li class="${c.ok?'ok':'no'}"><span class="dot">${c.ok?'✓':'–'}</span><span>${c.text}</span></li>`).join('');
 }
 function doing(){
@@ -1045,7 +1099,7 @@ function storeItem(type){
 }
 $('pBuild').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
-  if(b.dataset.buy){ const t=b.dataset.buy; if(spend(ITEMS[t].price)){ placeItem(t); log(`Du købte ${ITEMS[t].name.toLowerCase()} og satte den ind i buret.`); if(has('nysgerrig')) say('Noget nyt! Det skal undersøges.'); } }
+  if(b.dataset.buy){ const t=b.dataset.buy; if(spend(ITEMS[t].price)){ placeItem(t); taskEvent('buy'); log(`Du købte ${ITEMS[t].name.toLowerCase()} og satte den ind i buret.`); if(has('nysgerrig')) say('Noget nyt! Det skal undersøges.'); } }
   else if(b.dataset.place){ placeItem(b.dataset.place); }
   else if(b.dataset.store){ storeItem(b.dataset.store); }
   else if(b.id==='storeSel'){ const it=S.cage.items.find(i=>i.id===R.sel); if(it) storeItem(it.type); }
@@ -1095,9 +1149,9 @@ function renderHud(){
 }
 
 // ---------- action buttons ----------
-$('aFood').onclick=()=>{ if(!item('skaal')){ toast('Sæt en foderskål ind i buret først.'); return; } if(S.cage.bowl>90){ toast('Skålen er allerede fuld.'); return; } if(spend(2)){ S.cage.bowl=100; toast('Foderskålen er fyldt.'); if(has('madglad')&&awake()) say('Mad! Mad! Mad!'); } };
-$('aWater').onclick=()=>{ if(!item('flaske')){ toast('Sæt en vandflaske ind i buret først.'); return; } S.cage.water=100; toast('Vandflasken er fyldt.'); };
-$('aSpot').onclick=()=>{ if(S.time-S.lastSpot<180){ toast('Du har lige pletrenset. Prøv igen om lidt.'); return; } S.lastSpot=S.time; S.st.clean=clamp(S.st.clean+30); toast('Du fjernede det værste snavs.'); if(has('pertentlig')) say('Tak. Det var tiltrængt.'); };
+$('aFood').onclick=()=>{ if(!item('skaal')){ toast('Sæt en foderskål ind i buret først.'); return; } if(S.cage.bowl>90){ toast('Skålen er allerede fuld.'); return; } if(spend(2)){ S.cage.bowl=100; toast('Foderskålen er fyldt.'); taskEvent('food'); if(has('madglad')&&awake()) say('Mad! Mad! Mad!'); } };
+$('aWater').onclick=()=>{ if(!item('flaske')){ toast('Sæt en vandflaske ind i buret først.'); return; } const was=S.cage.water; S.cage.water=100; toast('Vandflasken er fyldt.'); if(was<95) taskEvent('water'); };
+$('aSpot').onclick=()=>{ if(S.time-S.lastSpot<180){ toast('Du har lige pletrenset. Prøv igen om lidt.'); return; } S.lastSpot=S.time; S.st.clean=clamp(S.st.clean+30); toast('Du fjernede det værste snavs.'); taskEvent('spot'); if(has('pertentlig')) say('Tak. Det var tiltrængt.'); };
 $('aBed').onclick=()=>{
   if(spend(12)){ S.st.clean=100; const recent=S.time-S.lastFull<4*1440; S.lastFull=S.time;
     S.st.fun=clamp(S.st.fun-(recent?18:8)); if(has('genert')) S.st.trust=clamp(S.st.trust-3);
@@ -1117,7 +1171,27 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 });
 
 // ---------- adoption ----------
-let chosen='syrisk';
+let chosen='syrisk', natures=[];
+function renderNatures(focus){
+  const box=$('natures');
+  const conflict=t=>(t==='doven'&&natures.includes('energisk'))||(t==='energisk'&&natures.includes('doven'));
+  box.innerHTML = `<button data-n="" aria-pressed="${!natures.length}">Overrask mig</button>` +
+    Object.entries(TRAITS).map(([k,t])=>`<button data-n="${k}" aria-pressed="${natures.includes(k)}" ${!natures.includes(k)&&(natures.length>=2||conflict(k))?'disabled':''}>${t.name}</button>`).join('');
+  $('natureCount').textContent = `· ${natures.length}/2 valgt`;
+  const f = focus && TRAITS[focus];
+  $('natureDesc').innerHTML = f ? `<b>${f.name}:</b> ${f.desc}`
+    : natures.length===0 ? 'Begge træk bliver tilfældige. Du kender det ene fra starten.'
+    : natures.length===1 ? 'Det andet træk bliver en overraskelse, som du opdager ved tillid 30.'
+    : 'Du kender begge træk fra starten.';
+}
+$('natures').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b||b.disabled) return;
+  const k=b.dataset.n;
+  if(!k) natures=[];
+  else if(natures.includes(k)) natures=natures.filter(x=>x!==k);
+  else if(natures.length<2) natures.push(k);
+  renderNatures(natures.includes(k)?k:null);
+});
 function openAdopt(){
   S=newState('Mochi','syrisk'); S.demo=true; R.act='idle'; R.x=300; R.y=floorY(); careBuilt=false;
   resize(); renderCare(true);
@@ -1132,14 +1206,16 @@ function openAdopt(){
     btn.onclick=()=>{ chosen=k; box.querySelectorAll('.breed').forEach(x=>x.setAttribute('aria-pressed',String(x===btn))); };
     box.appendChild(btn);
   }
+  natures=[]; renderNatures();
   $('adopt').hidden=false;
 }
 $('randName').onclick=()=>{ $('nameInput').value=pick(NAMES.filter(n=>n!==$('nameInput').value)); };
 $('adoptBtn').onclick=()=>{
   const name=($('nameInput').value.trim()||'Mochi').slice(0,16);
-  S=newState(name,chosen); R.act='idle'; R.x=150; R.y=floorY(); R.parts=[]; careBuilt=false;
-  const t=TRAITS[S.traits[0]].name;
-  log(`${name} flytter ind. Du ved allerede, at ${name} er ${t.toLowerCase()}.`);
+  S=newState(name,chosen,natures); newTask(); R.act='idle'; R.x=150; R.y=floorY(); R.parts=[]; careBuilt=false;
+  const kn=S.traits.slice(0,S.revealed).map(t=>TRAITS[t].name.toLowerCase()).join(' og ');
+  log(`${name} flytter ind. Du ved allerede, at ${name} er ${kn}.`);
+  log(`Dagens opgave: ${taskText(taskDef())} (+${taskDef().reward} kr.).`);
   if(BREEDS[chosen].bigWheel) log('Tip: Guldhamstere skal have et løbehjul på mindst 28 cm og et bur på mindst 100 × 50 cm.');
   $('adopt').hidden=true; resize(); renderCare(true); renderHud(); if(tab==='build') renderBuild(); if(tab==='log') renderLog();
   toast(`Velkommen hjem, ${name}!`); say('Hvor er jeg henne?',5); save();
@@ -1154,6 +1230,7 @@ function load(data){
   S=d; R.x=d.rt?.x??200; R.face=d.rt?.face??1; R.act='idle';
   resize(); R.y=floorY();
   // startbeløbet blev hævet fra 120 til 500 kr. (1.1.1): gamle gemte spil får forskellen én gang
+  if(!S.task) newTask();
   if(!S.start500){ S.start500=true; S.money+=380; log('Startbeløbet er hævet til 500 kr. Du får 380 kr. ekstra.'); }
   // catch up on time away (capped at 6 game hours)
   const away=Math.min(6*60, Math.max(0,(Date.now()-S.savedAt)/1000));
